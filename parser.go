@@ -15,13 +15,13 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
-	"sort"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 
-	"github.com/KyleBanks/depth"
-	"github.com/go-openapi/spec"
+	"github.com/wanweijing/depth"
+	"github.com/wanweijing/spec"
 )
 
 const (
@@ -180,13 +180,19 @@ func (parser *Parser) ParseAPI(searchDir, mainAPIFile string, parseDepth int) er
 		t.ResolveInternal = true
 		t.MaxDepth = parseDepth
 
+		fmt.Println("resolve prepare -> ", time.Now())
 		pkgName, err := getPkgName(filepath.Dir(absMainAPIFilePath))
 		if err != nil {
 			return err
 		}
+		depth.OnlyParse = pkgName + "/internal"
+		fmt.Println("resolve -> ", filepath.Dir(absMainAPIFilePath), pkgName, time.Now())
 		if err := t.Resolve(pkgName); err != nil {
 			return fmt.Errorf("pkg %s cannot find all dependencies, %s", pkgName, err)
 		}
+
+		// 强制去掉内部包
+
 		for i := 0; i < len(t.Root.Deps); i++ {
 			if err := parser.getAllGoFileInfoFromDeps(&t.Root.Deps[i]); err != nil {
 				return err
@@ -564,6 +570,7 @@ func (parser *Parser) ParseRouterAPIInfo(fileName string, astFile *ast.File) err
 				operation := NewOperation(parser, SetCodeExampleFilesDirectory(parser.codeExampleFilesDir)) //for per 'function' comment, create a new 'Operation' object
 				for _, comment := range astDeclaration.Doc.List {
 					if err := operation.ParseComment(comment.Text, astFile); err != nil {
+						operation.ParseComment(comment.Text, astFile)
 						return fmt.Errorf("ParseComment error in file %s :%+v", fileName, err)
 					}
 				}
@@ -623,6 +630,7 @@ func (parser *Parser) getTypeSchema(typeName string, file *ast.File, ref bool) (
 
 	typeSpecDef := parser.packages.FindTypeSpec(typeName, file)
 	if typeSpecDef == nil {
+		parser.packages.FindTypeSpec(typeName, file)
 		return nil, fmt.Errorf("cannot find type definition: %s", typeName)
 	}
 
@@ -652,13 +660,21 @@ func (parser *Parser) renameRefSchemas() {
 	}
 
 	//rename schemas in swagger.Definitions
-	for name, pkgPath := range parser.toBeRenamedSchemas {
-		if schema, ok := parser.swagger.Definitions[name]; ok {
-			delete(parser.swagger.Definitions, name)
-			name = parser.renameSchema(name, pkgPath)
-			parser.swagger.Definitions[name] = schema
-		}
-	}
+	// for name, pkgPath := range parser.toBeRenamedSchemas {
+	// 	// if schema, ok := parser.swagger.Definitions[name]; ok {
+	// 	// 	delete(parser.swagger.Definitions, name)
+	// 	// 	name = parser.renameSchema(name, pkgPath)
+	// 	// 	parser.swagger.Definitions[name] = schema
+	// 	// }
+	// 	// !!!!!!!!!
+	// 	// exist := false
+	// 	// for k, _ := range parser.swagger.Definitions {
+	// 	// 	if parser.swagger.Definitions[k].Name == name {
+	// 	// 		parser.swagger.Definitions[k].Schema = schema
+	// 	// 	}
+	// 	// }
+
+	// }
 
 	//rename URLs if match
 	for _, url := range parser.toBeRenamedRefURLs {
@@ -695,6 +711,7 @@ func (parser *Parser) getRefTypeSchema(typeSpecDef *TypeSpecDef, schema *Schema)
 		} else {
 			parser.swagger.Definitions[schema.Name] = spec.Schema{}
 		}
+
 		parser.outputSchemas[typeSpecDef] = schema
 	}
 
@@ -810,7 +827,8 @@ func (parser *Parser) parseTypeExpr(file *ast.File, typeExpr ast.Expr, ref bool)
 func (parser *Parser) parseStruct(file *ast.File, fields *ast.FieldList) (*spec.Schema, error) {
 
 	required := make([]string, 0)
-	properties := make(map[string]spec.Schema)
+	// properties := make(map[string]spec.Schema)
+	var properties []spec.OrderSchemaItem
 	for _, field := range fields.List {
 		fieldProps, requiredFromAnon, err := parser.parseStructField(file, field)
 		if err == ErrFuncTypeField {
@@ -821,18 +839,24 @@ func (parser *Parser) parseStruct(file *ast.File, fields *ast.FieldList) (*spec.
 			continue
 		}
 		required = append(required, requiredFromAnon...)
-		for k, v := range fieldProps {
-			properties[k] = v
-		}
+		properties = append(properties, fieldProps...)
+		// for k, v := range fieldProps {
+		// 	//	properties[k] = v
+		// 	temp := spec.OrderSchemaItem{
+		// 		Name:   k,
+		// 		Schema: v,
+		// 	}
+		// 	properties = append(properties, temp)
+		// }
 	}
 
-	sort.Strings(required)
+	// sort.Strings(required)
 
 	return &spec.Schema{
 		SchemaProps: spec.SchemaProps{
-			Type:       []string{OBJECT},
-			Properties: properties,
-			Required:   required,
+			Type:          []string{OBJECT},
+			PropertiesArr: properties,
+			Required:      required,
 		}}, nil
 }
 
@@ -855,7 +879,7 @@ type structField struct {
 	extensions   map[string]interface{}
 }
 
-func (parser *Parser) parseStructField(file *ast.File, field *ast.Field) (map[string]spec.Schema, []string, error) {
+func (parser *Parser) parseStructField(file *ast.File, field *ast.Field) ([]spec.OrderSchemaItem, []string, error) {
 	if field.Names == nil {
 		if field.Tag != nil {
 			skip, ok := reflect.StructTag(strings.ReplaceAll(field.Tag.Value, "`", "")).Lookup("swaggerignore")
@@ -873,18 +897,31 @@ func (parser *Parser) parseStructField(file *ast.File, field *ast.Field) (map[st
 			return nil, nil, err
 		}
 		if len(schema.Type) > 0 && schema.Type[0] == OBJECT {
-			if len(schema.Properties) == 0 {
+			if len(schema.PropertiesArr) == 0 {
 				return nil, nil, nil
 			}
 
-			properties := map[string]spec.Schema{}
-			for k, v := range schema.Properties {
-				properties[k] = v
-			}
+			// properties := map[string]spec.Schema{}
+			// for k, v := range schema.Properties {
+			// 	// properties[k] = v
+			// 	temp := spec.OrderSchemaItem{
+			// 		Name:   k,
+			// 		Schema: v,
+			// 	}
+			// 	properties = append(properties, temp)
+			// }
+			properties := schema.PropertiesArr.DeepCopy()
+
 			return properties, schema.SchemaProps.Required, nil
 		}
 		//for alias type of non-struct types ,such as array,map, etc. ignore field tag.
-		return map[string]spec.Schema{typeName: *schema}, nil, nil
+		temp := spec.OrderSchemaItem{
+			Name:   typeName,
+			Schema: *schema,
+		}
+
+		return []spec.OrderSchemaItem{temp}, nil, nil
+		// return map[string]spec.Schema{typeName: *schema}, nil, nil
 	}
 
 	fieldName, schema, err := parser.getFieldName(field)
@@ -942,7 +979,14 @@ func (parser *Parser) parseStructField(file *ast.File, field *ast.Field) (map[st
 	if structField.isRequired {
 		tagRequired = append(tagRequired, fieldName)
 	}
-	return map[string]spec.Schema{fieldName: *schema}, tagRequired, nil
+
+	temp := spec.OrderSchemaItem{
+		Name:   fieldName,
+		Schema: *schema,
+	}
+
+	return []spec.OrderSchemaItem{temp}, tagRequired, nil
+	// return map[string]spec.Schema{fieldName: *schema}, tagRequired, nil
 }
 
 func getFieldType(field ast.Expr) (string, error) {
@@ -1166,6 +1210,7 @@ func (parser *Parser) GetSchemaTypePath(schema *spec.Schema, depth int) []string
 			name = name[pos+1:]
 			if schema, ok := parser.swagger.Definitions[name]; ok {
 				return parser.GetSchemaTypePath(&schema, depth)
+
 			}
 		}
 	} else if len(schema.Type) > 0 {
@@ -1338,6 +1383,28 @@ func (parser *Parser) getAllGoFileInfoFromDeps(pkg *depth.Pkg) error {
 	if pkg.Raw == nil && pkg.Name == "C" {
 		return nil
 	}
+
+	// 强制跳过
+	skips := []string{
+		"github.com",
+		"go.mongodb.org",
+		"golang.org",
+		"google.golang.org",
+		"gopkg.in",
+		"git.dustess.com/mk-base",
+	}
+
+	for _, v := range skips {
+		if strings.HasPrefix(pkg.Name, "git.dustess.com/mk-base/gin-ext/api") || strings.HasPrefix(pkg.Name, "git.dustess.com/mk-base/pkg") {
+			continue
+		}
+
+		if strings.HasPrefix(pkg.Name, v) {
+			fmt.Printf("跳过%v解析\n", pkg.Name)
+			return nil
+		}
+	}
+
 	srcDir := pkg.Raw.Dir
 	files, err := ioutil.ReadDir(srcDir) // only parsing files in the dir(don't contains sub dir files)
 	if err != nil {
@@ -1367,6 +1434,11 @@ func (parser *Parser) getAllGoFileInfoFromDeps(pkg *depth.Pkg) error {
 func (parser *Parser) parseFile(packageDir, path string, src interface{}) error {
 	if strings.HasSuffix(strings.ToLower(path), "_test.go") || filepath.Ext(path) != ".go" {
 		return nil
+	}
+
+	fmt.Println("parseFile -> ", time.Now(), packageDir, path)
+	if packageDir == "github.com/wanweijing/spec" {
+		fmt.Println(1)
 	}
 
 	// positions are relative to FileSet
@@ -1448,6 +1520,51 @@ func (parser *Parser) Skip(path string, f os.FileInfo) error {
 // GetSwagger returns *spec.Swagger which is the root document object for the API specification.
 func (parser *Parser) GetSwagger() *spec.Swagger {
 	return parser.swagger
+}
+
+type SwaggerEx struct {
+	// spec.VendorExtensible
+
+	ID                  string                      `json:"id,omitempty"`
+	Consumes            []string                    `json:"consumes,omitempty"`
+	Produces            []string                    `json:"produces,omitempty"`
+	Schemes             []string                    `json:"schemes,omitempty"`
+	Swagger             string                      `json:"swagger,omitempty"`
+	Info                *spec.Info                  `json:"info,omitempty"`
+	Host                string                      `json:"host,omitempty"`
+	BasePath            string                      `json:"basePath,omitempty"`
+	Paths               *spec.Paths                 `json:"paths"`
+	Definitions         spec.Definitions            `json:"definitions,omitempty"`
+	Parameters          map[string]spec.Parameter   `json:"parameters,omitempty"`
+	Responses           map[string]spec.Response    `json:"responses,omitempty"`
+	SecurityDefinitions spec.SecurityDefinitions    `json:"securityDefinitions,omitempty"`
+	Security            []map[string][]string       `json:"security,omitempty"`
+	Tags                []spec.Tag                  `json:"tags,omitempty"`
+	ExternalDocs        *spec.ExternalDocumentation `json:"externalDocs,omitempty"`
+}
+
+func (parser *Parser) GetSwaggerEx() *SwaggerEx {
+	var ex SwaggerEx
+	// ex.VendorExtensible = parser.swagger.VendorExtensible
+	ex.ID = parser.swagger.ID
+	ex.Consumes = parser.swagger.Consumes
+	ex.Produces = parser.swagger.Produces
+	ex.Schemes = parser.swagger.Schemes
+	ex.Swagger = parser.swagger.Swagger
+	ex.Info = parser.swagger.Info
+	ex.Host = parser.swagger.Host
+	ex.BasePath = parser.swagger.BasePath
+	ex.Paths = parser.swagger.Paths
+	// ex.Definitions         spec.Definitions            `json:"definitions,omitempty"`
+	ex.Parameters = parser.swagger.Parameters
+	ex.Responses = parser.swagger.Responses
+	ex.SecurityDefinitions = parser.swagger.SecurityDefinitions
+	ex.Security = parser.swagger.Security
+	ex.Tags = parser.swagger.Tags
+	ex.ExternalDocs = parser.swagger.ExternalDocs
+	ex.Definitions = make(spec.Definitions)
+
+	return &ex
 }
 
 //addTestType just for tests

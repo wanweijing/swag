@@ -1,7 +1,7 @@
 package swag
 
 import (
-	"github.com/go-openapi/spec"
+	"github.com/wanweijing/spec"
 	"go/ast"
 )
 

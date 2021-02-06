@@ -6,7 +6,7 @@ import (
 	"go/ast"
 	"strings"
 
-	"github.com/go-openapi/spec"
+	"github.com/wanweijing/spec"
 )
 
 const (

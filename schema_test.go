@@ -3,8 +3,8 @@ package swag
 import (
 	"testing"
 
-	"github.com/go-openapi/spec"
 	"github.com/stretchr/testify/assert"
+	"github.com/wanweijing/spec"
 )
 
 func TestValidDataType(t *testing.T) {

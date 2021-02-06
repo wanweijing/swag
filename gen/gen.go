@@ -14,8 +14,8 @@ import (
 	"time"
 
 	"github.com/ghodss/yaml"
-	"github.com/go-openapi/spec"
-	"github.com/swaggo/swag"
+	"github.com/wanweijing/spec"
+	"github.com/wanweijing/swag"
 )
 
 // Gen presents a generate tool for swag.
@@ -91,9 +91,11 @@ func (g *Gen) Build(config *Config) error {
 	if err := p.ParseAPI(config.SearchDir, config.MainAPIFile, config.ParseDepth); err != nil {
 		return err
 	}
+
 	swagger := p.GetSwagger()
 
 	b, err := g.jsonIndent(swagger)
+	// b, err := json.Marshal(swagger)
 	if err != nil {
 		return err
 	}
@@ -133,7 +135,7 @@ func (g *Gen) Build(config *Config) error {
 	}
 
 	// Write doc
-	err = g.writeGoDoc(packageName, docs, swagger, config)
+	err = g.writeGoDoc(packageName, docs, p.GetSwagger(), config)
 	if err != nil {
 		return err
 	}
@@ -261,7 +263,7 @@ import (
 	"strings"
 
 	"github.com/alecthomas/template"
-	"github.com/swaggo/swag"
+	"github.com/wanweijing/swag"
 )
 
 var doc = ` + "`{{ printDoc .Doc}}`" + `

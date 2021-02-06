@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/go-openapi/spec"
 	"github.com/stretchr/testify/assert"
+	"github.com/wanweijing/spec"
 )
 
 func TestGen_Build(t *testing.T) {

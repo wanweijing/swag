@@ -5,9 +5,12 @@ import (
 	"log"
 	"os"
 
-	"github.com/swaggo/swag"
-	"github.com/swaggo/swag/gen"
+	"net/http"
+	_ "net/http/pprof"
+
 	"github.com/urfave/cli/v2"
+	"github.com/wanweijing/swag"
+	"github.com/wanweijing/swag/gen"
 )
 
 const (
@@ -115,6 +118,20 @@ func initAction(c *cli.Context) error {
 }
 
 func main() {
+	os.Args = append(os.Args, "init", "C:/work/go/src/mk-pay-svc/main.go")
+	// cmd := exec.Command("cd", "G:/")
+	// err := cmd.Start()
+	// err = cmd.Wait()
+
+	go func() {
+		http.ListenAndServe(":6060", nil)
+	}()
+	if len(os.Args) >= 2 && os.Args[1] == "init" {
+		temp := []string{"--parseDependency", "--parseDepth=3"}
+		temp = append(temp, os.Args[2:]...)
+		os.Args = append(os.Args[:2], temp...)
+	}
+
 	app := cli.NewApp()
 	app.Version = swag.Version
 	app.Usage = "Automatically generate RESTful API documentation with Swagger 2.0 for Go."

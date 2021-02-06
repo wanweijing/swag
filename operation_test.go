@@ -6,8 +6,8 @@ import (
 	"go/token"
 	"testing"
 
-	"github.com/go-openapi/spec"
 	"github.com/stretchr/testify/assert"
+	"github.com/wanweijing/spec"
 )
 
 func TestParseEmptyComment(t *testing.T) {
@@ -1526,7 +1526,7 @@ func TestFindTypeDefCoreLib(t *testing.T) {
 }
 
 func TestFindTypeDefExternalPkg(t *testing.T) {
-	spec, err := findTypeDef("github.com/KyleBanks/depth", "Tree")
+	spec, err := findTypeDef("github.com/wanweijing/depth", "Tree")
 	assert.NoError(t, err)
 	assert.NotNil(t, spec)
 }

@@ -14,12 +14,12 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/go-openapi/spec"
+	"github.com/wanweijing/spec"
 	"golang.org/x/tools/go/loader"
 )
 
 // Operation describes a single API operation on a path.
-// For more information: https://github.com/swaggo/swag#api-operation
+// For more information: https://github.com/wanweijing/swag#api-operation
 type Operation struct {
 	HTTPMethod string
 	Path       string
@@ -235,7 +235,10 @@ func (operation *Operation) ParseParamComment(commentLine string, astFile *ast.F
 			if err != nil {
 				return err
 			}
-			if len(schema.Properties) == 0 {
+			// if len(schema.Properties) == 0 {
+			// 	return nil
+			// }
+			if len(schema.PropertiesArr) <= 0 {
 				return nil
 			}
 			find := func(arr []string, target string) bool {
@@ -246,7 +249,8 @@ func (operation *Operation) ParseParamComment(commentLine string, astFile *ast.F
 				}
 				return false
 			}
-			items := schema.Properties.ToOrderedSchemaItems()
+			// items := schema.Properties.ToOrderedSchemaItems()
+			items := schema.PropertiesArr
 			for _, item := range items {
 				name := item.Name
 				prop := item.Schema
@@ -680,14 +684,21 @@ func (operation *Operation) parseCombinedObjectSchema(refType string, astFile *a
 	}
 
 	fields := parseFields(matches[2])
-	props := map[string]spec.Schema{}
+	// 	props := map[string]spec.Schema{}
+	var props []spec.OrderSchemaItem
 	for _, field := range fields {
 		if matches := strings.SplitN(field, "=", 2); len(matches) == 2 {
 			schema, err := operation.parseObjectSchema(matches[1], astFile)
 			if err != nil {
 				return nil, err
 			}
-			props[matches[0]] = *schema
+			// props[matches[0]] = *schema
+			temp := spec.OrderSchemaItem{
+				Name:   matches[0],
+				Schema: *schema,
+			}
+
+			props = append(props, temp)
 		}
 	}
 
@@ -696,8 +707,8 @@ func (operation *Operation) parseCombinedObjectSchema(refType string, astFile *a
 	}
 	return spec.ComposedSchema(*schema, spec.Schema{
 		SchemaProps: spec.SchemaProps{
-			Type:       []string{OBJECT},
-			Properties: props,
+			Type:          []string{OBJECT},
+			PropertiesArr: props,
 		},
 	}), nil
 }
