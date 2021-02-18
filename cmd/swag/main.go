@@ -118,7 +118,7 @@ func initAction(c *cli.Context) error {
 }
 
 func main() {
-	os.Args = append(os.Args, "init", "C:/work/go/src/mk-pay-svc/main.go")
+	// os.Args = append(os.Args, "init", "C:/work/go/src/mk-pay-svc/main.go")
 	// cmd := exec.Command("cd", "G:/")
 	// err := cmd.Start()
 	// err = cmd.Wait()
